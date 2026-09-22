@@ -2,6 +2,7 @@ import io
 import os
 import re
 import sys
+import time
 import zipfile
 import easyocr
 import numpy as np
@@ -130,7 +131,7 @@ def main():
 
   # 🔄 스마트 OCR 처리 함수 (해상도 2000px / 수주번호 검출 시 조기 종료)
   def process_ocr_smart(img, ocr_reader):
-    max_w = 2000  # 가독성 확보를 위해 2000px로 상향
+    max_w = 2000
     w, h = img.size
     if w > max_w:
       new_h = int(h * (max_w / w))
@@ -190,7 +191,7 @@ def main():
         best_img = test_img
         best_results = results
 
-      # 정방향(0도)에서 키워드와 함께 수주번호 패턴이 확실히 잡혔을 때만 조기 종료
+      # 정방향(0도)에서 키워드와 함께 수주번호 패턴이 잡혔을 때 조기 종료
       if angle == 0 and has_order_pattern and score >= 50:
         return best_results, best_img
 
@@ -209,13 +210,20 @@ def main():
 
   if uploaded_files:
     if len(uploaded_files) > 5:
-      st.info(
+      st.warning(
           '⚠️ 최대 5개까지 한 번에 처리 가능합니다. 상위 5개 파일만 분석합니다.'
       )
       target_files = uploaded_files[:5]
     else:
       target_files = uploaded_files
 
+    # ☕ 센스 있는 대기 안내 문구 출력
+    st.warning("""
+        ☕ **인공지능(AI)이 문서 내용을 정밀 분석 중입니다.**  
+        여러 개 파일을 처리하는 동안 **커피 한 잔의 여유**를 가지고 다른 업무를 먼저 보셔도 좋습니다! ☕✨
+        """)
+
+    start_time = time.time()  # 작업 시작 시간 기록
     processed_results = []
     zip_buffer = io.BytesIO()
 
@@ -238,7 +246,6 @@ def main():
           if file_ext == 'pdf':
             pdf = pdfium.PdfDocument(file_bytes)
             page = pdf[0]
-            # scale=1.6 으로 상향하여 세밀한 글자 인식률 확보
             image = page.render(scale=1.6).to_pil()
             pdf.close()
           else:
@@ -501,7 +508,13 @@ def main():
         prog_val = min(1.0, float(idx + 1) / float(len(target_files)))
         progress_bar.progress(prog_val)
 
-    st.success('🎉 모든 파일 분석이 완료되었습니다!')
+    # ⏱️ 최종 소요 시간 계산
+    elapsed_time = time.time() - start_time
+
+    st.success(
+        '🎉 모든 파일 분석이 완료되었습니다!'
+        f' **(⏱️ 총 작업 소요 시간: {elapsed_time:.1f}초)**'
+    )
 
     st.download_button(
         label='📦 변환된 모든 파일 한 번에 다운로드 (ZIP)',
