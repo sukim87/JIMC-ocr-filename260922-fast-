@@ -128,10 +128,9 @@ def main():
     parts[0] = corrected_main
     return prefix + ''.join(parts)
 
-  # 🔄 초고속 스마트 OCR 처리 함수 (Early Exit + Resize 최적화)
+  # 🔄 스마트 OCR 처리 함수 (해상도 2000px / 수주번호 검출 시 조기 종료)
   def process_ocr_smart(img, ocr_reader):
-    # 1. 이미지 가로 해상도 1600px 이하로 조정 (AI 연산 속도 급증)
-    max_w = 1600
+    max_w = 2000  # 가독성 확보를 위해 2000px로 상향
     w, h = img.size
     if w > max_w:
       new_h = int(h * (max_w / w))
@@ -164,7 +163,7 @@ def main():
       test_img = img.rotate(angle, expand=True) if angle != 0 else img
       tw, th = test_img.size
 
-      crop_box = (0, 0, tw, int(th * 0.55))
+      crop_box = (0, 0, tw, int(th * 0.65))
       cropped = test_img.crop(crop_box)
       img_np = np.array(cropped.convert('RGB'))
 
@@ -176,10 +175,12 @@ def main():
         if kw.lower() in extracted_text.lower():
           score += 15
 
+      has_order_pattern = False
       if re.search(
           r'([MHXP][234][A-Z0-9]+|ZNAJOB)', extracted_text, re.IGNORECASE
       ):
-        score += 30
+        score += 50
+        has_order_pattern = True
 
       score += min(len(extracted_text), 20)
 
@@ -189,8 +190,8 @@ def main():
         best_img = test_img
         best_results = results
 
-      # ★ [핵심 최적화] 0도(정방향)에서 수주번호나 키워드가 감지되면 즉시 리턴 (나머지 3회 회전 연산 스킵)
-      if angle == 0 and score >= 30:
+      # 정방향(0도)에서 키워드와 함께 수주번호 패턴이 확실히 잡혔을 때만 조기 종료
+      if angle == 0 and has_order_pattern and score >= 50:
         return best_results, best_img
 
     if best_score < 15:
@@ -237,8 +238,8 @@ def main():
           if file_ext == 'pdf':
             pdf = pdfium.PdfDocument(file_bytes)
             page = pdf[0]
-            # scale=1.4 로 설정하여 PDF 렌더링 및 OCR 최적화
-            image = page.render(scale=1.4).to_pil()
+            # scale=1.6 으로 상향하여 세밀한 글자 인식률 확보
+            image = page.render(scale=1.6).to_pil()
             pdf.close()
           else:
             image = Image.open(io.BytesIO(file_bytes))
@@ -390,6 +391,7 @@ def main():
                     k in t
                     for k in [
                         '업체소재지',
+                        '소재지',
                         'Vendor',
                         'Address',
                         '결재',
@@ -405,7 +407,11 @@ def main():
                     t,
                 )[0].strip()
                 clean_t = re.sub(r'[^가-힣a-zA-Z0-9]', '', clean_t)
-                if len(clean_t) >= 2 and clean_t not in customer_words:
+                if (
+                    len(clean_t) >= 2
+                    and clean_t not in customer_words
+                    and clean_t not in ['업체소재지', '소재지']
+                ):
                   vendor = clean_t
                   break
 
@@ -418,6 +424,7 @@ def main():
               clean_txt = re.sub(r'[^가-힣a-zA-Z0-9]', '', clean_txt)
               if clean_txt in customer_words or clean_txt in [
                   '업체소재지',
+                  '소재지',
                   'Vendor',
                   'Address',
                   '고객',
@@ -444,12 +451,14 @@ def main():
                       '파이프',
                       '금동',
                       '스틱',
+                      '상사',
                   ]
               ):
                 vendor = clean_txt
                 break
 
           if vendor:
+            vendor = re.sub(r'^업체소재지', '', vendor).strip()
             vendor = re.sub(r'스틱$', '스틸', vendor)
             vendor = vendor.replace('스틱', '스틸')
 
