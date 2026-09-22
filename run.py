@@ -191,7 +191,6 @@ def main():
         best_img = test_img
         best_results = results
 
-      # 정방향(0도)에서 키워드와 함께 수주번호 패턴이 잡혔을 때 조기 종료
       if angle == 0 and has_order_pattern and score >= 50:
         return best_results, best_img
 
@@ -217,20 +216,31 @@ def main():
     else:
       target_files = uploaded_files
 
-    # ☕ 센스 있는 대기 안내 문구 출력
     st.warning("""
         ☕ **인공지능(AI)이 문서 내용을 정밀 분석 중입니다.**  
         여러 개 파일을 처리하는 동안 **커피 한 잔의 여유**를 가지고 다른 업무를 먼저 보셔도 좋습니다! ☕✨
         """)
 
-    start_time = time.time()  # 작업 시작 시간 기록
+    start_time = time.time()
+    total_files = len(target_files)
     processed_results = []
     zip_buffer = io.BytesIO()
 
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-      progress_bar = st.progress(0.0)
+    # 진행률 게이지 및 텍스트 초기화
+    progress_bar = st.progress(0.0, text='⏳ 0% 완료 (분석 준비 중...)')
 
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
       for idx, file in enumerate(target_files):
+        # 실시간 진행률(%) 계산 및 상태 텍스트 업데이트
+        start_pct = int((idx / total_files) * 100)
+        progress_bar.progress(
+            idx / total_files,
+            text=(
+                f"⏳ **진행률 {start_pct}%** ({idx}/{total_files}개 완료) |"
+                f" 현재 `'{file.name}'` 분석 중..."
+            ),
+        )
+
         file.seek(0)
         file_bytes = file.read()
 
@@ -505,8 +515,12 @@ def main():
           st.error(f"'{file.name}' 처리 중 오류 발생: {e}")
           st.exception(e)
 
-        prog_val = min(1.0, float(idx + 1) / float(len(target_files)))
-        progress_bar.progress(prog_val)
+        # 파일 1개 작업 완료 후 진행률 업데이터
+        done_pct = int(((idx + 1) / total_files) * 100)
+        progress_bar.progress(
+            (idx + 1) / total_files,
+            text=f'✅ **진행률 {done_pct}%** ({idx + 1}/{total_files}개 완료)',
+        )
 
     # ⏱️ 최종 소요 시간 계산
     elapsed_time = time.time() - start_time
